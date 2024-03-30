@@ -20,9 +20,17 @@ unsafe impl bytemuck::Zeroable for Vertex {}
 
 
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
-    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
-    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+    Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [1.0, 0.0, 1.0] }, 
+    Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.0, 1.0, 1.0] },
+    Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.0, 0.0, 1.0] }, 
+    Vertex { position: [0.35966998, -0.3473291, 0.0], color: [1.0, 0.0, 0.0] },
+    Vertex { position: [0.44147372, 0.2347359, 0.0], color: [1.0, 1.0, 0.0] },
+];
+
+const INDICES: &[u16] = &[
+    0, 1, 4,
+    1, 2, 4,
+    2, 3, 4,
 ];
 
 fn main() {
@@ -66,6 +74,14 @@ fn main() {
         }
     );
 
+    let index_buffer = device.create_buffer_init(
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        }
+    );
+    
     let vertex_buffer_layout = VertexBufferLayout {
         array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
         step_mode: wgpu::VertexStepMode::Vertex,
@@ -102,7 +118,8 @@ fn main() {
         multiview: None,
     });
 
-    let num_vertices = VERTICES.len() as u32;
+    let num_indices = INDICES.len() as u32;
+
     let window = &window;
     event_loop.run(move |event, target| {
         let _ = (&instance, &adapter, &shader, &pipeline_layout);
@@ -147,7 +164,8 @@ fn main() {
                             });
                         rpass.set_pipeline(&render_pipeline);
                         rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        rpass.draw(0..num_vertices, 0..1);
+                        rpass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
+                        rpass.draw_indexed(0..num_indices, 0, 0..1);
                     }
 
                     queue.submit(Some(encoder.finish()));
