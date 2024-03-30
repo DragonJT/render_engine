@@ -18,25 +18,17 @@ struct Vertex {
 unsafe impl bytemuck::Pod for Vertex {}
 unsafe impl bytemuck::Zeroable for Vertex {}
 
-
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [1.0, 0.0, 1.0] }, 
-    Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.0, 1.0, 1.0] },
-    Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.0, 0.0, 1.0] }, 
-    Vertex { position: [0.35966998, -0.3473291, 0.0], color: [1.0, 0.0, 0.0] },
-    Vertex { position: [0.44147372, 0.2347359, 0.0], color: [1.0, 1.0, 0.0] },
-];
-
-const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
-];
-
 fn main() {
+    let mut vertices:Vec<Vertex> = Vec::new();
+    let mut indices:Vec<u16> = Vec::new();
+
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_position(winit::dpi::Position::Logical(winit::dpi::LogicalPosition{x:25.0, y:25.0}))
+        .with_inner_size(winit::dpi::Size::Logical(winit::dpi::LogicalSize{width:1000.0, height:800.0}))
+        .build(&event_loop)
+        .unwrap();
     let size = window.inner_size();
     //GL loads faster
     let instance = Instance::new(InstanceDescriptor{ backends:Backends::GL, ..Default::default()});
@@ -66,21 +58,6 @@ fn main() {
     let swapchain_capabilities = surface.get_capabilities(&adapter);
     let swapchain_format = swapchain_capabilities.formats[0];
 
-    let vertex_buffer = device.create_buffer_init(
-        &BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: BufferUsages::VERTEX,
-        }
-    );
-
-    let index_buffer = device.create_buffer_init(
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        }
-    );
     
     let vertex_buffer_layout = VertexBufferLayout {
         array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
@@ -118,16 +95,18 @@ fn main() {
         multiview: None,
     });
 
-    let num_indices = INDICES.len() as u32;
+    let ctx = egui::Context::default();
 
     let window = &window;
     event_loop.run(move |event, target| {
         let _ = (&instance, &adapter, &shader, &pipeline_layout);
+
         if let Event::WindowEvent {
             window_id: _,
             event,
         } = event
         {
+
             match event {
                 WindowEvent::Resized(new_size) => {
                     config.width = new_size.width.max(1);
@@ -136,6 +115,52 @@ fn main() {
                     window.request_redraw();
                 }
                 WindowEvent::RedrawRequested => {
+                    vertices.clear();
+                    indices.clear();
+                    let raw_input = egui::RawInput{..Default::default()};
+                    let full_output = ctx.run(raw_input, |ctx| {
+                        egui::CentralPanel::default().show(&ctx, |ui| {
+                            ui.label("Hello world!");
+                            if ui.button("Click me").clicked() {
+                            }
+                        });
+                    });
+                    let clipped_primitives = ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+                    for cp in &clipped_primitives{
+                        match &cp.primitive{
+                            egui::epaint::Primitive::Mesh(mesh)=>{
+                                for v in &mesh.vertices{
+                                    vertices.push(Vertex { 
+                                        position: [v.pos.x/100.0, v.pos.y/100.0, 0.0], 
+                                        color: [(v.color[0] as f32)/256.0, (v.color[1] as f32)/256.0, (v.color[2] as f32)/256.0] 
+                                    });
+                                }
+                                for i in &mesh.indices{
+                                    indices.push(*i as u16);
+                                }
+                            },
+                            egui::epaint::Primitive::Callback(_callback)=>{
+            
+                            },
+                        }
+                    }
+            
+                    let vertex_buffer = device.create_buffer_init(
+                        &BufferInitDescriptor {
+                            label: Some("Vertex Buffer"),
+                            contents: bytemuck::cast_slice(&vertices),
+                            usage: BufferUsages::VERTEX,
+                        }
+                    );
+                
+                    let index_buffer = device.create_buffer_init(
+                        &wgpu::util::BufferInitDescriptor {
+                            label: Some("Index Buffer"),
+                            contents: bytemuck::cast_slice(&indices),
+                            usage: wgpu::BufferUsages::INDEX,
+                        }
+                    );
+
                     let frame = surface
                         .get_current_texture()
                         .expect("Failed to acquire next swap chain texture");
@@ -163,9 +188,9 @@ fn main() {
                                 occlusion_query_set: None,
                             });
                         rpass.set_pipeline(&render_pipeline);
-                        rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        rpass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
-                        rpass.draw_indexed(0..num_indices, 0, 0..1);
+                        rpass.set_vertex_buffer(0, vertex_buffer.slice(0..(vertices.len()*24)as u64));
+                        rpass.set_index_buffer(index_buffer.slice(0..(indices.len()*2) as u64), IndexFormat::Uint16);
+                        rpass.draw_indexed(0..indices.len() as u32, 0, 0..1);
                     }
 
                     queue.submit(Some(encoder.finish()));

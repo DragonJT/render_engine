@@ -12,6 +12,6 @@ log = "0.4"
 wgpu = "0.19.3"
 futures = "0.3"
 bytemuck = { version = "1.12", features = [ "derive" ] }
-
+egui = "0.27.1"
 
  
