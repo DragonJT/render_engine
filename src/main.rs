@@ -261,6 +261,8 @@ fn main() {
     let mut sizey:u32 = 0;
     let mut mouse_position = egui::vec2(0.0, 0.0);
 
+    let mut text = "".to_owned();
+
     let window = &window;
     event_loop.run(move |event, target| {
         let _ = (&instance, &adapter, &shader);
@@ -272,7 +274,7 @@ fn main() {
         {
             match event {
                 WindowEvent::CursorMoved { device_id:_, position }=>{
-                    mouse_position = egui::vec2(position.x as f32*scale*7.5, position.y as f32*scale*7.5);
+                    mouse_position = egui::vec2(position.x as f32/scale, position.y as f32/scale);
                     egui_events.push(egui::Event::MouseMoved(mouse_position));
                 },
                 WindowEvent::MouseInput { device_id:_device_id, state, button:_button }=>{
@@ -295,6 +297,8 @@ fn main() {
                 WindowEvent::RedrawRequested => {
                     let raw_input = egui::RawInput{
                         events:egui_events.clone(),
+                        max_texture_side:Some(MAX_TEXTURE_SIZE as usize),
+                        screen_rect:Some(egui::Rect{min:egui::pos2(10.0,10.0), max:egui::pos2(200.0,200.0)}),
                         ..Default::default()
                     };
                     egui_events.clear();
@@ -302,10 +306,9 @@ fn main() {
                     let full_output = ctx.run(raw_input, |ctx| {
                         egui::CentralPanel::default().show(&ctx, |ui| {
                             ui.label("Hello world!");
+                            //ui.text_edit_singleline(&mut text);
                             if ui.button("Click me").clicked() {
                                 println!("HERE");
-                            }
-                            if ui.button("Click me").clicked() {
                             }
                         });
                     });
