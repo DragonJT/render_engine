@@ -1,3 +1,5 @@
+use egui::Modifiers;
+use winit::keyboard::PhysicalKey;
 use winit::{
     event::*,
     event_loop::EventLoop,
@@ -39,6 +41,59 @@ struct CameraUniform{
 unsafe impl bytemuck::Pod for CameraUniform {}
 unsafe impl bytemuck::Zeroable for CameraUniform {}
 
+fn convert_winit_keycode_to_egui_key(winit_keycode:winit::keyboard::KeyCode) -> Option<egui::Key>{
+    match winit_keycode {
+        winit::keyboard::KeyCode::Backquote=>None,
+        winit::keyboard::KeyCode::Backslash=>Some(egui::Key::Backslash),
+        winit::keyboard::KeyCode::BracketLeft=>Some(egui::Key::OpenBracket),
+        winit::keyboard::KeyCode::BracketRight=>Some(egui::Key::CloseBracket),
+        winit::keyboard::KeyCode::Comma=>Some(egui::Key::Comma),
+        winit::keyboard::KeyCode::Digit0=>Some(egui::Key::Num0),
+        winit::keyboard::KeyCode::Digit1=>Some(egui::Key::Num1),
+        winit::keyboard::KeyCode::Digit2=>Some(egui::Key::Num2),
+        winit::keyboard::KeyCode::Digit3=>Some(egui::Key::Num3),
+        winit::keyboard::KeyCode::Digit4=>Some(egui::Key::Num4),
+        winit::keyboard::KeyCode::Digit5=>Some(egui::Key::Num5),
+        winit::keyboard::KeyCode::Digit6=>Some(egui::Key::Num6),
+        winit::keyboard::KeyCode::Digit7=>Some(egui::Key::Num7),
+        winit::keyboard::KeyCode::Digit8=>Some(egui::Key::Num8),
+        winit::keyboard::KeyCode::Digit9=>Some(egui::Key::Num9),
+        winit::keyboard::KeyCode::Equal=>Some(egui::Key::Equals),
+        winit::keyboard::KeyCode::IntlBackslash=>Some(egui::Key::Backslash),
+        winit::keyboard::KeyCode::IntlRo=>None,
+        winit::keyboard::KeyCode::IntlYen=>None,
+        winit::keyboard::KeyCode::KeyA=>Some(egui::Key::A),
+        winit::keyboard::KeyCode::KeyB=>Some(egui::Key::B),
+        winit::keyboard::KeyCode::KeyC=>Some(egui::Key::C),
+        winit::keyboard::KeyCode::KeyD=>Some(egui::Key::D),
+        winit::keyboard::KeyCode::KeyE=>Some(egui::Key::E),
+        winit::keyboard::KeyCode::KeyF=>Some(egui::Key::F),
+        winit::keyboard::KeyCode::KeyG=>Some(egui::Key::G),
+        winit::keyboard::KeyCode::KeyH=>Some(egui::Key::H),
+        winit::keyboard::KeyCode::KeyI=>Some(egui::Key::I),
+        winit::keyboard::KeyCode::KeyJ=>Some(egui::Key::J),
+        winit::keyboard::KeyCode::KeyK=>Some(egui::Key::K),
+        winit::keyboard::KeyCode::KeyL=>Some(egui::Key::L),
+        winit::keyboard::KeyCode::KeyM=>Some(egui::Key::M),
+        winit::keyboard::KeyCode::KeyN=>Some(egui::Key::N),
+        winit::keyboard::KeyCode::KeyO=>Some(egui::Key::O),
+        winit::keyboard::KeyCode::KeyP=>Some(egui::Key::P),
+        winit::keyboard::KeyCode::KeyQ=>Some(egui::Key::Q),
+        winit::keyboard::KeyCode::KeyR=>Some(egui::Key::R),
+        winit::keyboard::KeyCode::KeyS=>Some(egui::Key::S),
+        winit::keyboard::KeyCode::KeyT=>Some(egui::Key::T),
+        winit::keyboard::KeyCode::KeyU=>Some(egui::Key::U),
+        winit::keyboard::KeyCode::KeyV=>Some(egui::Key::V),
+        winit::keyboard::KeyCode::KeyW=>Some(egui::Key::W),
+        winit::keyboard::KeyCode::KeyX=>Some(egui::Key::X),
+        winit::keyboard::KeyCode::KeyY=>Some(egui::Key::Y),
+        winit::keyboard::KeyCode::KeyZ=>Some(egui::Key::Z),
+        winit::keyboard::KeyCode::Enter=>Some(egui::Key::Enter),
+        winit::keyboard::KeyCode::Backspace=>Some(egui::Key::Backspace),
+        winit::keyboard::KeyCode::Tab=>Some(egui::Key::Tab),
+        _ => None,
+    }
+}
 fn main() {
     let mut vertices:Vec<Vertex> = Vec::new();
     let mut indices:Vec<u16> = Vec::new();
@@ -283,6 +338,47 @@ fn main() {
                         button: egui::PointerButton::Primary, 
                         pressed: state.is_pressed(), 
                         modifiers: egui::Modifiers::NONE });
+                },
+                WindowEvent::KeyboardInput { device_id:_device_id, event, is_synthetic:_is_synthetic } => {
+                    let mut keycode:Option<egui::Key> = None;
+                    match event.physical_key{
+                        PhysicalKey::Code(code)=>{
+                            match convert_winit_keycode_to_egui_key(code){
+                                Some(key)=>{
+                                    egui_events.push(egui::Event::Key { 
+                                        key, 
+                                        physical_key: Some(key), 
+                                        pressed:event.state.is_pressed() , 
+                                        repeat:event.repeat, 
+                                        modifiers: Modifiers::NONE });
+                                    keycode = Some(key);
+                                },
+                                None=>{}
+                            }
+                            
+                        },
+                        PhysicalKey::Unidentified(native_keycode)=>{}
+                    }
+                    match event.text{
+                        Some(text) => {
+                            let do_event = match keycode{
+                                Some(key) => {
+                                    match key{
+                                        egui::Key::Backspace=>false,
+                                        egui::Key::Enter=>false,
+                                        egui::Key::Tab=>false,
+                                        _=>true,
+                                    }
+                                }
+                                None => true,
+                            };
+                            if do_event{
+                                egui_events.push(egui::Event::Text(text.to_string()));
+                            }
+                        },
+                        None => {}
+                    }
+                   
                 },
                 WindowEvent::Resized(new_size) => {
                     config.width = new_size.width.max(1);
