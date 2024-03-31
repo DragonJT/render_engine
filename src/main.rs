@@ -318,7 +318,7 @@ fn main() {
     let mut egui_events:Vec<egui::Event> = Vec::new();
     let mut sizex:u32 = 0;
     let mut sizey:u32 = 0;
-    let mut mouse_position = egui::vec2(0.0, 0.0);
+    let mut mouse_position = egui::pos2(0.0, 0.0);
 
     let mut text = "".to_owned();
     let mut code = "".to_owned();
@@ -335,15 +335,16 @@ fn main() {
         {
             match event {
                 WindowEvent::CursorMoved { device_id:_, position }=>{
-                    mouse_position = egui::vec2(position.x as f32/scale, position.y as f32/scale);
-                    egui_events.push(egui::Event::MouseMoved(mouse_position));
+                    mouse_position = egui::pos2(position.x as f32/scale, position.y as f32/scale);
+                    egui_events.push(egui::Event::PointerMoved(mouse_position));
                 },
                 WindowEvent::MouseInput { device_id:_device_id, state, button:_button }=>{
                     egui_events.push(egui::Event::PointerButton { 
-                        pos: mouse_position.to_pos2(),
+                        pos: mouse_position,
                         button: egui::PointerButton::Primary, 
                         pressed: state.is_pressed(), 
                         modifiers: egui::Modifiers::NONE });
+
                 },
                 WindowEvent::KeyboardInput { device_id:_device_id, event, is_synthetic:_is_synthetic } => {
                     let mut keycode:Option<egui::Key> = None;
