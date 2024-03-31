@@ -91,6 +91,10 @@ fn convert_winit_keycode_to_egui_key(winit_keycode:winit::keyboard::KeyCode) -> 
         winit::keyboard::KeyCode::Enter=>Some(egui::Key::Enter),
         winit::keyboard::KeyCode::Backspace=>Some(egui::Key::Backspace),
         winit::keyboard::KeyCode::Tab=>Some(egui::Key::Tab),
+        winit::keyboard::KeyCode::ArrowLeft=>Some(egui::Key::ArrowLeft),
+        winit::keyboard::KeyCode::ArrowRight=>Some(egui::Key::ArrowRight),
+        winit::keyboard::KeyCode::ArrowUp=>Some(egui::Key::ArrowUp),
+        winit::keyboard::KeyCode::ArrowDown=>Some(egui::Key::ArrowDown),
         _ => None,
     }
 }
@@ -316,7 +320,9 @@ fn main() {
     let mut sizey:u32 = 0;
     let mut mouse_position = egui::vec2(0.0, 0.0);
 
-    let mut text = "LALALA".to_owned();
+    let mut text = "".to_owned();
+    let mut code = "".to_owned();
+    let mut checked = false;
 
     let window = &window;
     event_loop.run(move |event, target| {
@@ -357,7 +363,7 @@ fn main() {
                             }
                             
                         },
-                        PhysicalKey::Unidentified(native_keycode)=>{}
+                        PhysicalKey::Unidentified(_native_keycode)=>{}
                     }
                     match event.text{
                         Some(text) => {
@@ -403,6 +409,8 @@ fn main() {
                         egui::CentralPanel::default().show(&ctx, |ui| {
                             ui.label("Hello world!");
                             ui.text_edit_singleline(&mut text);
+                            ui.code_editor(&mut code);
+                            ui.checkbox(&mut checked, "Checkbox");
                             if ui.button("Click me").clicked() {
                                 println!("HERE");
                             }
