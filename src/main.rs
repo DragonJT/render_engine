@@ -72,7 +72,7 @@ fn main() {
         source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
     });
 
-    let scale = 5.0;
+    let scale = 4.0;
     let view = cgmath::ortho(0.0, size.width as f32, size.height as f32, 0.0, -1.0, 1.0)
             * cgmath::Matrix4::from_scale(scale)
             * OPENGL_TO_WGPU_MATRIX;
@@ -261,7 +261,7 @@ fn main() {
     let mut sizey:u32 = 0;
     let mut mouse_position = egui::vec2(0.0, 0.0);
 
-    let mut text = "".to_owned();
+    let mut text = "LALALA".to_owned();
 
     let window = &window;
     event_loop.run(move |event, target| {
@@ -306,7 +306,7 @@ fn main() {
                     let full_output = ctx.run(raw_input, |ctx| {
                         egui::CentralPanel::default().show(&ctx, |ui| {
                             ui.label("Hello world!");
-                            //ui.text_edit_singleline(&mut text);
+                            ui.text_edit_singleline(&mut text);
                             if ui.button("Click me").clicked() {
                                 println!("HERE");
                             }
@@ -370,6 +370,7 @@ fn main() {
 
                     vertices.clear();
                     indices.clear();
+                    let mut vertices_id = 0;
                     for cp in &clipped_primitives{
                         match &cp.primitive{
                             egui::epaint::Primitive::Mesh(mesh)=>{
@@ -386,14 +387,14 @@ fn main() {
                                     });
                                 }
                                 for i in &mesh.indices{
-                                    indices.push(*i as u16);
+                                    indices.push(*i as u16 + vertices_id);
                                 }
-                                
                             },
                             egui::epaint::Primitive::Callback(_callback)=>{
             
                             },
                         }
+                        vertices_id = vertices.len() as u16;
                     }
 
                     let vertex_buffer = device.create_buffer_init(
