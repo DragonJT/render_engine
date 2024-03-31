@@ -57,12 +57,13 @@ fn main() {
 
     
     let ctx = egui::Context::default();
+    ctx.set_pixels_per_point(7.5);
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
         "RedditMono".to_owned(),
         egui::FontData::from_static(include_bytes!("RedditMono-Medium.ttf")).tweak(
             egui::FontTweak {
-                scale: 5.0, 
+                scale: 0.95, 
                 ..Default::default()
             },
         ),
@@ -112,7 +113,7 @@ fn main() {
                             egui::epaint::Primitive::Mesh(mesh)=>{
                                 for v in &mesh.vertices{
                                     vertices.push(Vertex { 
-                                        position: [v.pos.x/500.0, v.pos.y/500.0, 0.0], 
+                                        position: [v.pos.x/250.0, v.pos.y/250.0, 0.0], 
                                         tex_coords: [v.uv.x, v.uv.y],
                                         color: [
                                             (v.color[0] as f32)/256.0, 
