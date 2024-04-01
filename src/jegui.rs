@@ -75,15 +75,14 @@ impl Jegui{
         device:&wgpu::Device, 
         surface:&wgpu::Surface,
         queue:&wgpu::Queue,
-        camera_buffer:&wgpu::Buffer,
+        camera:&crate::JCamera,
         target:&winit::event_loop::EventLoopWindowTarget<()>,
-        fonttex:&crate::JTexture, 
+        fonttex:&mut crate::JTexture, 
         render_pipeline:&wgpu::RenderPipeline,
-        camera_bind_group:&wgpu::BindGroup,
         window:&winit::window::Window,
         run_ui: impl FnOnce(&egui::Context)
     ) {
-        if self.update(&event, config, &device, &surface, &queue, &camera_buffer, &target){
+        if self.update(&event, config, &device, &surface, &queue, &camera.buffer, &target){
             let raw_input = egui::RawInput{
                 events:self.events.clone(),
                 max_texture_side:Some(crate::MAX_TEXTURE_SIZE as usize),
@@ -93,7 +92,7 @@ impl Jegui{
             self.events.clear();
 
             let full_output = self.ctx.run(raw_input,run_ui);
-            self.render(full_output, &queue, &fonttex, &device, &surface, &render_pipeline, &camera_bind_group, &window);
+            self.render(full_output, &queue, fonttex, &device, &surface, &render_pipeline, &camera.bind_group, &window);
         }
     }
     
@@ -211,7 +210,7 @@ impl Jegui{
         &mut self, 
         full_output:egui::FullOutput, 
         queue:&wgpu::Queue, 
-        fonttex:&crate::JTexture, 
+        fonttex:&mut crate::JTexture, 
         device:&wgpu::Device, 
         surface:&wgpu::Surface, 
         render_pipeline:&wgpu::RenderPipeline,
@@ -222,7 +221,7 @@ impl Jegui{
             match &t.image{
                 egui::ImageData::Font(font)=>{
                     let dimensions = &font.size;
-                    if dimensions[0]>crate::MAX_TEXTURE_SIZE as usize || dimensions[1]>crate::MAX_TEXTURE_SIZE as usize{
+                    if dimensions[0]>fonttex.width as usize || dimensions[1]>fonttex.height as usize{
                         panic!("font texture size larger than max texture size");
                     }
                     self.sizex = dimensions[0] as u32;
@@ -232,12 +231,10 @@ impl Jegui{
                     for p in &font.pixels{
                         let v = (p*255.0) as u8;
                         let i = (x*4 + y*crate::MAX_TEXTURE_SIZE*4) as usize;
-                        unsafe{
-                            crate::PIXELS[i] = v;
-                            crate::PIXELS[i+1] = v;
-                            crate::PIXELS[i+2] = v;
-                            crate::PIXELS[i+3] = v;
-                        }
+                        fonttex.pixels[i] = v;
+                        fonttex.pixels[i+1] = v;
+                        fonttex.pixels[i+2] = v;
+                        fonttex.pixels[i+3] = v;
                         x+=1;
                         if x>=self.sizex{
                             x=0;
@@ -246,23 +243,7 @@ impl Jegui{
     
                     }
                     
-                    queue.write_texture(
-                        wgpu::ImageCopyTexture {
-                            texture: &fonttex.texture,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        unsafe {
-                            &crate::PIXELS
-                        },
-                        wgpu::ImageDataLayout {
-                            offset: 0,
-                            bytes_per_row: Some(4 * crate::MAX_TEXTURE_SIZE),
-                            rows_per_image: Some(crate::MAX_TEXTURE_SIZE),
-                        },
-                        fonttex.size,
-                    );
+                    fonttex.write_texture(queue);
                     
                 },
                 egui::ImageData::Color(_color)=>{
