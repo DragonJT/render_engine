@@ -1,13 +1,15 @@
 use wgpu::util::DeviceExt;
+const MAX_TEXTURE_SIZE:u32 = 4096;
 
 use crate::jwgpu;
 
 pub struct Core{
     mouse_position:egui::Pos2,
-    pub scale:f32,
+    scale:f32,
     sizex:u32,
     sizey:u32,
     ctx:egui::Context,
+    pipeline:jwgpu::JRenderPipeline,
 }
 
 impl Core{
@@ -72,15 +74,14 @@ impl Core{
 
     pub fn run(&mut self,
         jwgpu_core:&mut jwgpu::Core,
-        render_pipeline:&mut jwgpu::JRenderPipeline,
         run_ui: impl FnOnce(&egui::Context)
     ) {
-        let raw_input = self.handle_events(jwgpu_core, &render_pipeline);
+        let raw_input = self.handle_events(jwgpu_core);
         let full_output = self.ctx.run(raw_input,run_ui);
-        self.render(full_output, jwgpu_core, render_pipeline);
+        self.render(full_output, jwgpu_core);
     }
     
-    fn handle_events(&mut self, jwgpu_core: &mut jwgpu::Core, render_pipeline:&jwgpu::JRenderPipeline)->egui::RawInput{
+    fn handle_events(&mut self, jwgpu_core: &mut jwgpu::Core)->egui::RawInput{
         let mut events:Vec<egui::Event> = Vec::new();
         for event in &jwgpu_core.events{
             match event {
@@ -145,20 +146,20 @@ impl Core{
                         * cgmath::Matrix4::from_scale(self.scale)
                         * jwgpu::OPENGL_TO_WGPU_MATRIX;
                     let camera_uniform = jwgpu::CameraUniform{view:view.into()};
-                    jwgpu_core.queue.write_buffer(&render_pipeline.camera.buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
+                    jwgpu_core.queue.write_buffer(&self.pipeline.camera.buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
                 }
                 _=>{}
             }
         }
         egui::RawInput{
             events,
-            max_texture_side:Some(render_pipeline.texture.width as usize),
+            max_texture_side:Some(self.pipeline.texture.width as usize),
             screen_rect:Some(egui::Rect{min:egui::pos2(10.0,10.0), max:egui::pos2(200.0,500.0)}),
             ..Default::default()
         }
     }
 
-    pub fn new()->Core{
+    pub fn new(jwgpu_core: &mut jwgpu::Core, scale:f32)->Core{
         let ctx = egui::Context::default();
         ctx.set_pixels_per_point(7.5);
     
@@ -178,20 +179,29 @@ impl Core{
             .or_default()
             .insert(0, "RedditMono".to_owned());
         ctx.set_fonts(fonts);
-        Core { mouse_position: egui::pos2(0.0, 0.0), scale: 3.0, sizex: 0, sizey: 0, ctx }
+
+        let shader = jwgpu::create_shader(&jwgpu_core.device, include_str!("shader.wgsl"));
+        let view = cgmath::ortho(0.0, jwgpu_core.size.width as f32, jwgpu_core.size.height as f32, 0.0, -1.0, 1.0)
+                * cgmath::Matrix4::from_scale(scale)
+                * jwgpu::OPENGL_TO_WGPU_MATRIX;
+        let camera = jwgpu::JCamera::new(&jwgpu_core.device, view);
+        let fonttex = jwgpu::JTexture::new(&jwgpu_core.device, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE);
+        let render_pipeline = jwgpu::create_render_pipeline(&jwgpu_core.device, &[&fonttex.bind_group_layout, &camera.bind_group_layout], &shader, &jwgpu_core.config);
+        let pipeline = jwgpu::JRenderPipeline { texture:fonttex, camera, render_pipeline};
+
+        Core { mouse_position: egui::pos2(0.0, 0.0), scale, sizex: 0, sizey: 0, ctx, pipeline }
     }
 
     fn render(
         &mut self, 
         full_output:egui::FullOutput, 
         jwgpu_core: &mut jwgpu::Core,
-        render_pipeline:&mut jwgpu::JRenderPipeline
     ){
         for (_id,t) in &full_output.textures_delta.set{
             match &t.image{
                 egui::ImageData::Font(font)=>{
                     let dimensions = &font.size;
-                    if dimensions[0]>render_pipeline.texture.width as usize || dimensions[1]>render_pipeline.texture.height as usize{
+                    if dimensions[0]>MAX_TEXTURE_SIZE as usize || dimensions[1]>MAX_TEXTURE_SIZE as usize{
                         panic!("font texture size larger than max texture size");
                     }
                     self.sizex = dimensions[0] as u32;
@@ -200,11 +210,11 @@ impl Core{
                     let mut y = 0;
                     for p in &font.pixels{
                         let v = (p*255.0) as u8;
-                        let i = (x*4 + y*crate::MAX_TEXTURE_SIZE*4) as usize;
-                        render_pipeline.texture.pixels[i] = v;
-                        render_pipeline.texture.pixels[i+1] = v;
-                        render_pipeline.texture.pixels[i+2] = v;
-                        render_pipeline.texture.pixels[i+3] = v;
+                        let i = (x*4 + y*MAX_TEXTURE_SIZE*4) as usize;
+                        self.pipeline.texture.pixels[i] = v;
+                        self.pipeline.texture.pixels[i+1] = v;
+                        self.pipeline.texture.pixels[i+2] = v;
+                        self.pipeline.texture.pixels[i+3] = v;
                         x+=1;
                         if x>=self.sizex{
                             x=0;
@@ -213,7 +223,7 @@ impl Core{
     
                     }
                     
-                    render_pipeline.texture.write_texture(&jwgpu_core.queue);
+                    self.pipeline.texture.write_texture(&jwgpu_core.queue);
                     
                 },
                 egui::ImageData::Color(_color)=>{
@@ -232,7 +242,7 @@ impl Core{
                     for v in &mesh.vertices{
                         vertices.push(jwgpu::Vertex { 
                             position: [v.pos.x, v.pos.y], 
-                            tex_coords: [v.uv.x*self.sizex as f32/crate::MAX_TEXTURE_SIZE as f32, v.uv.y*self.sizey as f32/crate::MAX_TEXTURE_SIZE as f32],
+                            tex_coords: [v.uv.x*self.sizex as f32/MAX_TEXTURE_SIZE as f32, v.uv.y*self.sizey as f32/MAX_TEXTURE_SIZE as f32],
                             color: [
                                 (v.color[0] as f32)/256.0, 
                                 (v.color[1] as f32)/256.0, 
@@ -295,10 +305,10 @@ impl Core{
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
-            rpass.set_pipeline(&render_pipeline.render_pipeline);
+            rpass.set_pipeline(&self.pipeline.render_pipeline);
     
-            rpass.set_bind_group(0, &render_pipeline.texture.bind_group, &[]);
-            rpass.set_bind_group(1, &render_pipeline.camera.bind_group, &[]);
+            rpass.set_bind_group(0, &self.pipeline.texture.bind_group, &[]);
+            rpass.set_bind_group(1, &self.pipeline.camera.bind_group, &[]);
     
             rpass.set_vertex_buffer(0, vertex_buffer.slice(0..(vertices.len()*24)as u64));
             rpass.set_index_buffer(index_buffer.slice(0..(indices.len()*2) as u64), wgpu::IndexFormat::Uint16);
