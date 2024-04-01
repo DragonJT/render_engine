@@ -1,15 +1,16 @@
 use wgpu::util::DeviceExt;
 
-pub struct Jegui{
+use crate::jwgpu;
+
+pub struct Core{
     mouse_position:egui::Pos2,
     pub scale:f32,
-    events:Vec<egui::Event>,
     sizex:u32,
     sizey:u32,
     ctx:egui::Context,
 }
 
-impl Jegui{
+impl Core{
 
     fn convert_winit_keycode_to_egui_key(winit_keycode:winit::keyboard::KeyCode) -> Option<egui::Key>{
         match winit_keycode {
@@ -70,54 +71,25 @@ impl Jegui{
     }
 
     pub fn run(&mut self,
-        event:&winit::event::Event<()>,
-        config:&mut wgpu::SurfaceConfiguration, 
-        device:&wgpu::Device, 
-        surface:&wgpu::Surface,
-        queue:&wgpu::Queue,
-        camera:&crate::JCamera,
-        target:&winit::event_loop::EventLoopWindowTarget<()>,
-        fonttex:&mut crate::JTexture, 
-        render_pipeline:&wgpu::RenderPipeline,
-        window:&winit::window::Window,
+        jwgpu_core:&mut jwgpu::Core,
+        render_pipeline:&mut jwgpu::JRenderPipeline,
         run_ui: impl FnOnce(&egui::Context)
     ) {
-        if self.update(&event, config, &device, &surface, &queue, &camera.buffer, &target){
-            let raw_input = egui::RawInput{
-                events:self.events.clone(),
-                max_texture_side:Some(crate::MAX_TEXTURE_SIZE as usize),
-                screen_rect:Some(egui::Rect{min:egui::pos2(10.0,10.0), max:egui::pos2(200.0,500.0)}),
-                ..Default::default()
-            };
-            self.events.clear();
-
-            let full_output = self.ctx.run(raw_input,run_ui);
-            self.render(full_output, &queue, fonttex, &device, &surface, &render_pipeline, &camera.bind_group, &window);
-        }
+        let raw_input = self.handle_events(jwgpu_core, &render_pipeline);
+        let full_output = self.ctx.run(raw_input,run_ui);
+        self.render(full_output, jwgpu_core, render_pipeline);
     }
     
-    fn update(
-        &mut self,
-        event:&winit::event::Event<()>, 
-        config:&mut wgpu::SurfaceConfiguration, 
-        device:&wgpu::Device, 
-        surface:&wgpu::Surface,
-        queue:&wgpu::Queue,
-        camera_buffer:&wgpu::Buffer,
-        target:&winit::event_loop::EventLoopWindowTarget<()>
-    )->bool{
-        if let winit::event::Event::WindowEvent {
-            window_id: _,
-            event,
-        } = event
-        {
+    fn handle_events(&mut self, jwgpu_core: &mut jwgpu::Core, render_pipeline:&jwgpu::JRenderPipeline)->egui::RawInput{
+        let mut events:Vec<egui::Event> = Vec::new();
+        for event in &jwgpu_core.events{
             match event {
                 winit::event::WindowEvent::CursorMoved { device_id:_, position }=>{
                     self.mouse_position = egui::pos2(position.x as f32/self.scale, position.y as f32/self.scale);
-                    self.events.push(egui::Event::PointerMoved(self.mouse_position));
+                    events.push(egui::Event::PointerMoved(self.mouse_position));
                 },
                 winit::event::WindowEvent::MouseInput { device_id:_device_id, state, button:_button }=>{
-                    self.events.push(egui::Event::PointerButton { 
+                    events.push(egui::Event::PointerButton { 
                         pos: self.mouse_position,
                         button: egui::PointerButton::Primary, 
                         pressed: state.is_pressed(), 
@@ -128,9 +100,9 @@ impl Jegui{
                     let mut keycode:Option<egui::Key> = None;
                     match event.physical_key{
                         winit::keyboard::PhysicalKey::Code(code)=>{
-                            match Jegui::convert_winit_keycode_to_egui_key(code){
+                            match Core::convert_winit_keycode_to_egui_key(code){
                                 Some(key)=>{
-                                    self.events.push(egui::Event::Key { 
+                                    events.push(egui::Event::Key { 
                                         key, 
                                         physical_key: Some(key), 
                                         pressed:event.state.is_pressed() , 
@@ -158,7 +130,7 @@ impl Jegui{
                                 None => true,
                             };
                             if do_event{
-                                self.events.push(egui::Event::Text(text.to_string()));
+                                events.push(egui::Event::Text(text.to_string()));
                             }
                         },
                         None => {}
@@ -166,24 +138,27 @@ impl Jegui{
                     
                 },
                 winit::event::WindowEvent::Resized(new_size) => {
-                    config.width = new_size.width.max(1);
-                    config.height = new_size.height.max(1);
-                    surface.configure(&device, &config);
-                    let view = cgmath::ortho(0.0, config.width as f32, config.height as f32, 0.0, -1.0, 1.0)
+                    jwgpu_core.config.width = new_size.width.max(1);
+                    jwgpu_core.config.height = new_size.height.max(1);
+                    jwgpu_core.surface.configure(&jwgpu_core.device, &jwgpu_core.config);
+                    let view = cgmath::ortho(0.0, jwgpu_core.config.width as f32, jwgpu_core.config.height as f32, 0.0, -1.0, 1.0)
                         * cgmath::Matrix4::from_scale(self.scale)
-                        * crate::OPENGL_TO_WGPU_MATRIX;
-                    let camera_uniform = crate::CameraUniform{view:view.into()};
-                    queue.write_buffer(&camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
+                        * jwgpu::OPENGL_TO_WGPU_MATRIX;
+                    let camera_uniform = jwgpu::CameraUniform{view:view.into()};
+                    jwgpu_core.queue.write_buffer(&render_pipeline.camera.buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
                 }
-                winit::event::WindowEvent::CloseRequested => target.exit(),
-                winit::event::WindowEvent::RedrawRequested => return true,
                 _=>{}
             }
         }
-        false
+        egui::RawInput{
+            events,
+            max_texture_side:Some(render_pipeline.texture.width as usize),
+            screen_rect:Some(egui::Rect{min:egui::pos2(10.0,10.0), max:egui::pos2(200.0,500.0)}),
+            ..Default::default()
+        }
     }
 
-    pub fn new()->Jegui{
+    pub fn new()->Core{
         let ctx = egui::Context::default();
         ctx.set_pixels_per_point(7.5);
     
@@ -203,25 +178,20 @@ impl Jegui{
             .or_default()
             .insert(0, "RedditMono".to_owned());
         ctx.set_fonts(fonts);
-        Jegui { mouse_position: egui::pos2(0.0, 0.0), scale: 3.0, events: Vec::new(), sizex: 0, sizey: 0, ctx }
+        Core { mouse_position: egui::pos2(0.0, 0.0), scale: 3.0, sizex: 0, sizey: 0, ctx }
     }
 
     fn render(
         &mut self, 
         full_output:egui::FullOutput, 
-        queue:&wgpu::Queue, 
-        fonttex:&mut crate::JTexture, 
-        device:&wgpu::Device, 
-        surface:&wgpu::Surface, 
-        render_pipeline:&wgpu::RenderPipeline,
-        camera_bind_group:&wgpu::BindGroup,
-        window:&winit::window::Window
+        jwgpu_core: &mut jwgpu::Core,
+        render_pipeline:&mut jwgpu::JRenderPipeline
     ){
         for (_id,t) in &full_output.textures_delta.set{
             match &t.image{
                 egui::ImageData::Font(font)=>{
                     let dimensions = &font.size;
-                    if dimensions[0]>fonttex.width as usize || dimensions[1]>fonttex.height as usize{
+                    if dimensions[0]>render_pipeline.texture.width as usize || dimensions[1]>render_pipeline.texture.height as usize{
                         panic!("font texture size larger than max texture size");
                     }
                     self.sizex = dimensions[0] as u32;
@@ -231,10 +201,10 @@ impl Jegui{
                     for p in &font.pixels{
                         let v = (p*255.0) as u8;
                         let i = (x*4 + y*crate::MAX_TEXTURE_SIZE*4) as usize;
-                        fonttex.pixels[i] = v;
-                        fonttex.pixels[i+1] = v;
-                        fonttex.pixels[i+2] = v;
-                        fonttex.pixels[i+3] = v;
+                        render_pipeline.texture.pixels[i] = v;
+                        render_pipeline.texture.pixels[i+1] = v;
+                        render_pipeline.texture.pixels[i+2] = v;
+                        render_pipeline.texture.pixels[i+3] = v;
                         x+=1;
                         if x>=self.sizex{
                             x=0;
@@ -243,7 +213,7 @@ impl Jegui{
     
                     }
                     
-                    fonttex.write_texture(queue);
+                    render_pipeline.texture.write_texture(&jwgpu_core.queue);
                     
                 },
                 egui::ImageData::Color(_color)=>{
@@ -252,7 +222,7 @@ impl Jegui{
             }
         }
     
-        let mut vertices:Vec<crate::Vertex> = Vec::new();
+        let mut vertices:Vec<jwgpu::Vertex> = Vec::new();
         let mut indices:Vec<u16> = Vec::new();
         let mut vertices_id = 0;
         let clipped_primitives = self.ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
@@ -260,7 +230,7 @@ impl Jegui{
             match &cp.primitive{
                 egui::epaint::Primitive::Mesh(mesh)=>{
                     for v in &mesh.vertices{
-                        vertices.push(crate::Vertex { 
+                        vertices.push(jwgpu::Vertex { 
                             position: [v.pos.x, v.pos.y], 
                             tex_coords: [v.uv.x*self.sizex as f32/crate::MAX_TEXTURE_SIZE as f32, v.uv.y*self.sizey as f32/crate::MAX_TEXTURE_SIZE as f32],
                             color: [
@@ -283,7 +253,7 @@ impl Jegui{
             vertices_id = vertices.len() as u16;
         }
         
-        let vertex_buffer = device.create_buffer_init(
+        let vertex_buffer = jwgpu_core.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
                 contents: bytemuck::cast_slice(&vertices),
@@ -291,7 +261,7 @@ impl Jegui{
             }
         );
     
-        let index_buffer = device.create_buffer_init(
+        let index_buffer = jwgpu_core.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
                 contents: bytemuck::cast_slice(&indices),
@@ -299,14 +269,14 @@ impl Jegui{
             }
         );
     
-        let frame = surface
+        let frame = jwgpu_core.surface
             .get_current_texture()
             .expect("Failed to acquire next swap chain texture");
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            jwgpu_core.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: None,
             });
         {
@@ -325,18 +295,17 @@ impl Jegui{
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
-            rpass.set_pipeline(&render_pipeline);
+            rpass.set_pipeline(&render_pipeline.render_pipeline);
     
-            rpass.set_bind_group(0, &fonttex.bind_group, &[]);
-            rpass.set_bind_group(1, &camera_bind_group, &[]);
+            rpass.set_bind_group(0, &render_pipeline.texture.bind_group, &[]);
+            rpass.set_bind_group(1, &render_pipeline.camera.bind_group, &[]);
     
             rpass.set_vertex_buffer(0, vertex_buffer.slice(0..(vertices.len()*24)as u64));
             rpass.set_index_buffer(index_buffer.slice(0..(indices.len()*2) as u64), wgpu::IndexFormat::Uint16);
             rpass.draw_indexed(0..indices.len() as u32, 0, 0..1);
         }
     
-        queue.submit(Some(encoder.finish()));
+        jwgpu_core.queue.submit(Some(encoder.finish()));
         frame.present();
-        window.request_redraw();
     }
 }
