@@ -1,6 +1,4 @@
 use egui::Modifiers;
-use winit::dpi::PhysicalSize;
-use winit::event;
 use winit::event_loop::EventLoopWindowTarget;
 use winit::keyboard::PhysicalKey;
 use winit::{
@@ -12,14 +10,14 @@ use wgpu::*;
 use wgpu::util::*;
 use futures::executor::block_on;
 use std::borrow::Cow;
-use std::u32::MAX;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 struct Vertex {
-    position: [f32; 3],
+    position: [f32; 2],
     tex_coords: [f32; 2],
     color: [f32; 4],
+    viewport:[f32; 4],
 }
 
 unsafe impl bytemuck::Pod for Vertex {}
@@ -272,14 +270,15 @@ fn render_egui(
             egui::epaint::Primitive::Mesh(mesh)=>{
                 for v in &mesh.vertices{
                     vertices.push(Vertex { 
-                        position: [v.pos.x, v.pos.y, 0.0], 
+                        position: [v.pos.x, v.pos.y], 
                         tex_coords: [v.uv.x*ed.sizex as f32/MAX_TEXTURE_SIZE as f32, v.uv.y*ed.sizey as f32/MAX_TEXTURE_SIZE as f32],
                         color: [
                             (v.color[0] as f32)/256.0, 
                             (v.color[1] as f32)/256.0, 
                             (v.color[2] as f32)/256.0, 
                             (v.color[3] as f32)/256.0
-                        ] 
+                        ],
+                        viewport: [cp.clip_rect.min.x, cp.clip_rect.min.y, cp.clip_rect.max.x, cp.clip_rect.max.y],
                     });
                 }
                 for i in &mesh.indices{
@@ -475,11 +474,11 @@ fn create_shader(device:&Device, file:&str)->ShaderModule{
     })
 }
 
-fn create_window()->(EventLoop<()>, winit::window::Window, Instance, PhysicalSize<u32>){
+fn create_window(width:f64, height:f64)->(EventLoop<()>, winit::window::Window, Instance, winit::dpi::PhysicalSize<u32>){
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
         .with_position(winit::dpi::Position::Logical(winit::dpi::LogicalPosition{x:25.0, y:25.0}))
-        .with_inner_size(winit::dpi::Size::Logical(winit::dpi::LogicalSize{width:1000.0, height:800.0}))
+        .with_inner_size(winit::dpi::Size::Logical(winit::dpi::LogicalSize{width, height}))
         .build(&event_loop)
         .unwrap();
     //GL loads faster
@@ -488,7 +487,7 @@ fn create_window()->(EventLoop<()>, winit::window::Window, Instance, PhysicalSiz
     (event_loop, window, instance, size)
 }
 
-fn create_surface(instance:&Instance, surface:&Surface, size:PhysicalSize<u32>)->(Device, Queue, SurfaceConfiguration){
+fn create_surface(instance:&Instance, surface:&Surface, size:winit::dpi::PhysicalSize<u32>)->(Device, Queue, SurfaceConfiguration){
     let adapter = block_on(instance.request_adapter(&RequestAdapterOptions {
         power_preference: PowerPreference::default(), 
         compatible_surface: Some(&surface), 
@@ -517,18 +516,23 @@ fn create_render_pipeline(device:&Device, bind_group_layouts:&[&BindGroupLayout]
             wgpu::VertexAttribute {
                 offset: 0,
                 shader_location: 0,
-                format: wgpu::VertexFormat::Float32x3,
+                format: wgpu::VertexFormat::Float32x2,
             },
             wgpu::VertexAttribute {
-                offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                 shader_location: 1,
                 format: wgpu::VertexFormat::Float32x2,
             },
             wgpu::VertexAttribute {
-                offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
                 shader_location: 2,
                 format: wgpu::VertexFormat::Float32x4,
-            }
+            },
+            wgpu::VertexAttribute {
+                offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                shader_location: 3,
+                format: wgpu::VertexFormat::Float32x4,
+            },
         ]
     };
 
@@ -581,7 +585,7 @@ fn create_egui_data()->EguiData{
 
 fn main() {
     env_logger::init();
-    let (event_loop, window, instance, size) = create_window();
+    let (event_loop, window, instance, size) = create_window(1200.0, 800.0);
     let surface = instance.create_surface(&window).unwrap();
     let (device, queue, mut config) = create_surface(&instance, &surface, size);
     let shader = create_shader(&device, include_str!("shader.wgsl"));
@@ -605,21 +609,24 @@ fn main() {
                 let raw_input = egui::RawInput{
                     events:ed.egui_events.clone(),
                     max_texture_side:Some(MAX_TEXTURE_SIZE as usize),
-                    screen_rect:Some(egui::Rect{min:egui::pos2(10.0,10.0), max:egui::pos2(200.0,200.0)}),
+                    screen_rect:Some(egui::Rect{min:egui::pos2(10.0,10.0), max:egui::pos2(200.0,500.0)}),
                     ..Default::default()
                 };
                 ed.egui_events.clear();
     
                 let full_output = ed.ctx.run(raw_input, |ctx| {
                     egui::CentralPanel::default().show(&ctx, |ui| {
-                        ui.label("Hello world!");
-                        ui.text_edit_singleline(&mut text);
-                        ui.code_editor(&mut code);
-                        ui.checkbox(&mut checked, "Checkbox");
-                        ui.checkbox(&mut checked2, "Checkbox2");
-                        if ui.button("Click me").clicked() {
-                            println!("HERE");
-                        }
+                        egui::ScrollArea::vertical().show(ui, |ui|{
+                            ui.heading("Special heading");
+                            ui.text_edit_singleline(&mut text);
+                            ui.code_editor(&mut code);
+                            ui.checkbox(&mut checked, "Checkbox");
+                            ui.checkbox(&mut checked2, "Checkbox2");
+                            if ui.button("Click me").clicked() {
+                                println!("HERE");
+                            }
+                        });
+                        
                     });
                 });
                 render_egui(full_output, &mut ed, &queue, &fonttex, &device, &surface, &render_pipeline, &camera_bind_group, &window);
