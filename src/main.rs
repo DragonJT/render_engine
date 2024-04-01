@@ -1,5 +1,5 @@
 
-use wgpu::*;
+
 use wgpu::util::*;
 use futures::executor::block_on;
 use std::borrow::Cow;
@@ -42,17 +42,17 @@ unsafe impl bytemuck::Zeroable for CameraUniform {}
 
 
 struct JTexture{
-    texture:Texture,
-    bind_group:BindGroup,
-    bind_group_layout:BindGroupLayout,
-    size:Extent3d,
+    texture:wgpu::Texture,
+    bind_group:wgpu::BindGroup,
+    bind_group_layout:wgpu::BindGroupLayout,
+    size:wgpu::Extent3d,
     pixels:Vec<u8>,
     width:u32,
     height:u32,
 }
 
 impl JTexture{
-    fn new(device:&Device, width:u32, height:u32)->Self{
+    fn new(device:&wgpu::Device, width:u32, height:u32)->Self{
         let pixels = vec![0; (width*height*4) as usize];
         let size = wgpu::Extent3d {
             width,
@@ -126,7 +126,7 @@ impl JTexture{
         Self{texture, bind_group, bind_group_layout, size, pixels, width, height}
     }
 
-    fn write_texture(&self, queue:&Queue){
+    fn write_texture(&self, queue:&wgpu::Queue){
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &self.texture,
@@ -147,13 +147,13 @@ impl JTexture{
 
 
 struct JCamera{
-    bind_group:BindGroup,
-    bind_group_layout:BindGroupLayout,
-    buffer:Buffer,
+    bind_group:wgpu::BindGroup,
+    bind_group_layout:wgpu::BindGroupLayout,
+    buffer:wgpu::Buffer,
 }
 
 impl JCamera{
-    fn new(device:&Device, view:cgmath::Matrix4<f32>)->Self{
+    fn new(device:&wgpu::Device, view:cgmath::Matrix4<f32>)->Self{
         let camera_uniform = CameraUniform{view:view.into()};
         let buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -194,14 +194,14 @@ impl JCamera{
 }
 
 
-fn create_shader(device:&Device, file:&str)->ShaderModule{
-    device.create_shader_module(ShaderModuleDescriptor {
+fn create_shader(device:&wgpu::Device, file:&str)->wgpu::ShaderModule{
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
         source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(file)),
     })
 }
 
-fn create_window(width:f64, height:f64)->(winit::event_loop::EventLoop<()>, winit::window::Window, Instance, winit::dpi::PhysicalSize<u32>){
+fn create_window(width:f64, height:f64)->(winit::event_loop::EventLoop<()>, winit::window::Window, wgpu::Instance, winit::dpi::PhysicalSize<u32>){
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window = winit::window::WindowBuilder::new()
         .with_position(winit::dpi::Position::Logical(winit::dpi::LogicalPosition{x:25.0, y:25.0}))
@@ -209,19 +209,19 @@ fn create_window(width:f64, height:f64)->(winit::event_loop::EventLoop<()>, wini
         .build(&event_loop)
         .unwrap();
     //GL loads faster
-    let instance = Instance::new(InstanceDescriptor{ backends:Backends::GL, ..Default::default()});
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor{ backends:wgpu::Backends::GL, ..Default::default()});
     let size = window.inner_size();
     (event_loop, window, instance, size)
 }
 
-fn create_surface(instance:&Instance, surface:&Surface, size:winit::dpi::PhysicalSize<u32>)->(Device, Queue, SurfaceConfiguration){
-    let adapter = block_on(instance.request_adapter(&RequestAdapterOptions {
-        power_preference: PowerPreference::default(), 
+fn create_surface(instance:&wgpu::Instance, surface:&wgpu::Surface, size:winit::dpi::PhysicalSize<u32>)->(wgpu::Device, wgpu::Queue, wgpu::SurfaceConfiguration){
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::default(), 
         compatible_surface: Some(&surface), 
         force_fallback_adapter: false 
     })).unwrap();
     let (device, queue) = block_on(adapter.request_device(
-        &DeviceDescriptor { label: None, required_features: Features::empty(), required_limits: Limits::default()}, 
+        &wgpu::DeviceDescriptor { label: None, required_features: wgpu::Features::empty(), required_limits: wgpu::Limits::default()}, 
         None)).unwrap();
     let mut config = surface.get_default_config(&adapter, size.width, size.height).unwrap();
     let view_format = config.format.add_srgb_suffix();
@@ -230,13 +230,13 @@ fn create_surface(instance:&Instance, surface:&Surface, size:winit::dpi::Physica
     (device, queue, config)
 }
 
-fn create_render_pipeline(device:&Device, bind_group_layouts:&[&BindGroupLayout], shader:&ShaderModule, config:&SurfaceConfiguration) -> RenderPipeline{
-    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+fn create_render_pipeline(device:&wgpu::Device, bind_group_layouts:&[&wgpu::BindGroupLayout], shader:&wgpu::ShaderModule, config:&wgpu::SurfaceConfiguration) -> wgpu::RenderPipeline{
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
         bind_group_layouts,
         push_constant_ranges: &[],
     });
-    let vertex_buffer_layout = VertexBufferLayout {
+    let vertex_buffer_layout = wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
         step_mode: wgpu::VertexStepMode::Vertex,
         attributes: &[
@@ -263,10 +263,10 @@ fn create_render_pipeline(device:&Device, bind_group_layouts:&[&BindGroupLayout]
         ]
     };
 
-    device.create_render_pipeline(&RenderPipelineDescriptor {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: None,
         layout: Some(&pipeline_layout),
-        vertex: VertexState {
+        vertex: wgpu::VertexState {
             module: &shader,
             entry_point: "vs_main",
             buffers: &[vertex_buffer_layout],
@@ -280,9 +280,9 @@ fn create_render_pipeline(device:&Device, bind_group_layouts:&[&BindGroupLayout]
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        primitive: PrimitiveState::default(),
+        primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
-        multisample: MultisampleState::default(),
+        multisample: wgpu::MultisampleState::default(),
         multiview: None,
     })
 }
@@ -306,11 +306,14 @@ fn main() {
     let mut origin = cgmath::vec3(180.0, 170.0, 160.0);
     let mut anglex = 180.0;
     let mut angley = 180.0;
+    let mut text = "".to_owned();
 
     let window = &window;
     event_loop.run(move |event, target| {
         egui.run(&event, &mut config, &device, &surface, &queue, &camera, &target, &mut fonttex, &render_pipeline, &window, |ctx|{
             egui::CentralPanel::default().show(&ctx, |ui| {
+                ui.heading("HelloWorld");
+                ui.text_edit_singleline(&mut text);
                 ui.add(egui::Slider::new(&mut anglex, 0.0..=360.0).text("AngleX"));
                 ui.add(egui::Slider::new(&mut angley, 0.0..=360.0).text("AngleY"));
                 ui.add(egui::Slider::new(&mut origin.x, 0.0..=360.0).text("OriginX"));
